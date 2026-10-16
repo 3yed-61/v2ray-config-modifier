@@ -1,1 +1,124 @@
-# v2ray-config-modifier
+# V2Ray Config Modifier
+
+A web-based tool to generate V2Ray configurations for multiple IP addresses or ranges, supporting VMESS, VLESS, WireGuard, and Trojan protocols.
+
+## Description
+
+The **V2Ray Config Modifier** is an HTML and JavaScript-based application designed to help users generate multiple V2Ray configurations efficiently. Users can input existing VMESS, VLESS, WireGuard, or Trojan configurations, specify IP addresses or ranges, or choose from predefined IP ranges of popular CDN providers like Cloudflare, Gcore, and Fastly. The tool generates new configurations for each IP address or range.
+
+## Features
+
+- **VMESS, VLESS, WireGuard, and Trojan Support**: Accepts VMESS, VLESS, WireGuard, and Trojan configurations as input.
+- **WireGuard Config Conversion**: Converts standard WireGuard `[Interface]` / `[Peer]` configs to `wireguard://` URLs, including multiple configs at once.
+- **IP List and Range Input**: Users can enter custom IP addresses or ranges in CIDR format.
+- **Predefined IP Ranges**: Easily select from existing IP ranges of Cloudflare, Gcore, or Fastly.
+- **Config List Support**: Paste a list of VMESS, VLESS, WireGuard, or Trojan configurations and generate new ones based on a base config.
+- **SNI Spoof**: Replace the target IP and port with custom values.
+- **Frag + FP**: Generate Fragment + Fingerprint configs using a custom IP list, with `188.114.98.0` as the default IP. Supported non-TLS Cloudflare configs are converted to TLS on port `443`.
+- **ECH**: Add or replace the `ech` parameter in TLS VMESS, VLESS, and Trojan configs. The default is `cloudflare-ech.com+udp://1.1.1.1`.
+- **Bulk Config Generation**: Generates configurations for all specified IP addresses or configurations in one click.
+- **User-Friendly Interface**: Simple light and dark interface with no installation needed.
+- **Export Options**: Save generated configurations to a file or copy to the clipboard.
+
+## Getting Started
+
+### Prerequisites
+
+- A modern web browser (Chrome, Firefox, Edge, Safari, etc.).
+- An existing VMESS, VLESS, WireGuard, or Trojan configuration to use as a base.
+- Basic understanding of V2Ray configurations and IP addressing.
+
+### Installation
+
+1. **Clone or Download the Repository**
+
+   - Clone the repository with Git:
+
+     ```bash
+     git clone https://github.com/3yed-61/v2ray-config-modifier.git
+     ```
+
+   - Or [download the ZIP file](https://github.com/3yed-61/v2ray-config-modifier/archive/refs/heads/main.zip) and extract it.
+
+2. **Open the Application**
+
+   - Navigate to the extracted folder.
+   - Open `index.html` in your preferred web browser.
+
+## Accessing the Application Online
+
+You can use the **V2Ray Config Modifier** directly from your web browser without the need to install any software. Simply visit the following URL to access the application:
+
+[https://3yed-61.github.io/v2ray-config-modifier/](https://3yed-61.github.io/v2ray-config-modifier/)
+
+This web-based version is fully functional and allows you to generate and download V2Ray configurations.
+
+## Usage
+
+### Step 1: Input Base Configuration
+
+- **Paste Configuration**: Copy and paste your existing VMESS, VLESS, WireGuard, or Trojan configuration.
+
+### WireGuard Conversion
+
+- Paste one or more standard WireGuard configs containing `[Interface]` and `[Peer]` sections into the **Configs** field.
+- Select **WireGuard** as the input type.
+- Click **Generate** to convert the configs directly to `wireguard://` URLs. No IP list or IP range is required in this mode.
+- Existing `wireguard://` URLs and Base64-encoded WireGuard URLs are also accepted.
+- Supported WireGuard options such as `Address`, `MTU`, `AllowedIPs`, `PresharedKey`, `PersistentKeepalive`, `Reserved` / `ClientId`, and AmneziaWG parameters are preserved when available.
+
+### Step 2: Select IP Addresses or Configs
+
+#### Option A: Enter Custom IPs or Ranges
+
+- **IP List**: Provide a list of IP addresses.
+- **IP Range**: Enter one or more IP ranges using CIDR notation (e.g., `192.168.1.0/24`).
+
+#### Option B: Use Predefined IP Ranges
+
+- **Cloudflare IP Ranges**: Select to use Cloudflare's IP addresses.
+- **Gcore IP Ranges**: Choose Gcore's IP addresses.
+- **Fastly IP Ranges**: Opt for Fastly's IP addresses.
+
+#### Option C: Enter a List of Configs
+
+- **Config List**: Paste a list of existing VMESS, VLESS, WireGuard, or Trojan configurations. The tool will extract the IP address from each configuration and use them to generate new configurations based on the provided base config.
+
+#### Option D: SNI Spoof
+
+- Set a custom spoof IP and port.
+
+#### Option E: Frag + FP
+
+- Enter one or more IP addresses for Frag + FP. The default IP is `188.114.98.0`. Supported non-TLS Cloudflare configs are converted to TLS on port `443`.
+
+#### Option F: ECH
+
+- Enter one or more ECH values, one per line. The default is `cloudflare-ech.com+udp://1.1.1.1`.
+
+#### Note
+
+You can combine custom IP ranges with predefined ranges for more flexibility.
+
+### Step 3: Generate Configurations
+
+- For IP ranges, set the number of outputs. The default is `2048`.
+- Click the **"Generate"** button.
+- In **WireGuard** mode, the tool converts the provided WireGuard configs directly to `wireguard://` URLs.
+- In other modes, the tool processes the base configuration and replaces the IP address with each IP from the specified ranges or config list.
+- The generated configurations will be available for copying or downloading.
+
+### Step 4: Export Configurations
+
+- **Copy**: Click the **"Copy"** button to copy all configurations to the clipboard.
+- **Download**: Click the **"Download"** button to save all configurations to a file.
+
+## Tutorial Video
+
+Here's a quick tutorial on how to use the **V2Ray Config Modifier**:
+
+[![V2Ray Config Modifier Tutorial](https://img.youtube.com/vi/J9g1kbdW8Oc/0.jpg)](https://youtu.be/J9g1kbdW8Oc)
+
+## Contribution
+
+Contributions and updates are welcome. Please submit changes via a Pull Request.
