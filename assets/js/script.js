@@ -1,0 +1,967 @@
+let generatedOutput = '';
+
+function showMessage(message, type) {
+    const messageBox = document.getElementById('messageBox');
+    const messageText = document.getElementById('messageText');
+
+    messageBox.style.display = 'none';
+    messageBox.classList.remove('alert-success', 'alert-danger', 'alert-warning');
+    messageText.textContent = message;
+
+    switch(type) {
+        case 'success':
+            messageBox.classList.add('alert-success');
+            break;
+        case 'warning':
+            messageBox.classList.add('alert-warning');
+            break;
+        case 'error':
+        default:
+            messageBox.classList.add('alert-danger');
+    }
+
+    messageBox.style.display = 'block';
+}
+
+function showError(message) {
+    showMessage(message, 'error');
+}
+
+function showWarning(message) {
+    showMessage(message, 'warning');
+}
+
+function showSuccess(message) {
+    showMessage(message, 'success');
+}
+
+function clearFieldMessages() {
+    document.querySelectorAll('.field-message').forEach(message => {
+        message.textContent = '';
+    });
+
+    document.querySelectorAll('.form-control.is-invalid').forEach(input => {
+        input.classList.remove('is-invalid');
+        input.removeAttribute('aria-invalid');
+    });
+}
+
+function clearMessage() {
+    const messageBox = document.getElementById('messageBox');
+
+    if (messageBox) {
+        messageBox.style.display = 'none';
+    }
+
+    clearFieldMessages();
+}
+
+function showFieldMessage(id, message) {
+    clearMessage();
+
+    const fieldMessage = document.getElementById(id);
+    if (fieldMessage) {
+        fieldMessage.textContent = message;
+    }
+
+    document.querySelectorAll(`[aria-describedby~="${id}"]`).forEach(input => {
+        input.classList.add('is-invalid');
+        input.setAttribute('aria-invalid', 'true');
+    });
+}
+
+function showButtonFeedback(button, message, duration = 1000) {
+    const label = button.querySelector('.provider-label') || button;
+    const originalText = button.dataset.defaultLabel || label.textContent;
+
+    button.dataset.defaultLabel = originalText;
+    clearTimeout(button.feedbackTimer);
+    label.textContent = message;
+    button.feedbackTimer = setTimeout(() => {
+        label.textContent = originalText;
+    }, duration);
+}
+
+function shuffleArray(array) {
+    for (let i = array.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [array[i], array[j]] = [array[j], array[i]];
+    }
+    return array;
+}
+
+function toggleInputFields() {
+    clearMessage();
+
+    const inputType = document.getElementById('inputType').value;
+    const cidrFields = document.getElementById('cidrFields');
+    const listFields = document.getElementById('listFields');
+    const configListFields = document.getElementById('configListFields');
+    const sniSpoofFields = document.getElementById('sniSpoofFields');
+    const fragfpFields = document.getElementById('fragfpFields');
+    const echFields = document.getElementById('echFields');
+    const inputConfig = document.getElementById('inputConfig');
+
+    cidrFields.style.display = 'none';
+    listFields.style.display = 'none';
+    configListFields.style.display = 'none';
+    sniSpoofFields.style.display = 'none';
+    fragfpFields.style.display = 'none';
+    echFields.style.display = 'none';
+    inputConfig.placeholder = inputType === 'wireguard' ? '[Interface]...' : 'vless://...';
+
+    if (inputType === 'cidr') {
+        cidrFields.style.display = 'block';
+    } else if (inputType === 'list') {
+        listFields.style.display = 'block';
+    } else if (inputType === 'configList') {
+        configListFields.style.display = 'block';
+    } else if (inputType === 'sniSpoof') {
+        sniSpoofFields.style.display = 'block';
+    } else if (inputType === 'fragfp') {
+        fragfpFields.style.display = 'block';
+    } else if (inputType === 'ech') {
+        echFields.style.display = 'block';
+    }
+
+    updateBaseConfigCount();
+}
+
+function isValidCIDR(cidr) {
+    try {
+        return ipaddr.parseCIDR(cidr)[0].kind() === 'ipv4';
+    } catch (error) {
+        return false;
+    }
+}
+
+function incrementIP(ip) {
+    let currentIpNumeric = ip.octets.reduce((acc, octet) => (acc << 8) + octet, 0);
+    currentIpNumeric += 1;
+    const nextIpOctets = [
+        (currentIpNumeric >>> 24) & 0xFF,
+        (currentIpNumeric >>> 16) & 0xFF,
+        (currentIpNumeric >>> 8) & 0xFF,
+        currentIpNumeric & 0xFF
+    ];
+
+    return new ipaddr.IPv4(nextIpOctets);
+}
+
+function extractValidIPs(rawText) {
+    const matches = rawText.match(/\b(?:\d{1,3}\.){3}\d{1,3}\b/g) || [];
+
+    return [...new Set(matches)].filter(ip => ipaddr.isValid(ip) && ipaddr.parse(ip).kind() === 'ipv4');
+}
+
+function isValidConfigFormat(inputConfig) {
+    if (inputConfig.startsWith('vmess://') || inputConfig.startsWith('vless://') ||
+        inputConfig.startsWith('wireguard://') || inputConfig.startsWith('trojan://')) {
+        return true;
+    }
+    return false;
+}
+
+function detectConfigType(inputConfig) {
+    if (inputConfig.startsWith('vmess://')) {
+        return 'vmess';
+    } else if (inputConfig.startsWith('vless://')) {
+        return 'vless';
+    } else if (inputConfig.startsWith('wireguard://')) {
+        return 'wireguard';
+    } else if (inputConfig.startsWith('trojan://')) {
+        return 'trojan';
+    }
+    return null;
+}
+
+function decodeVmessConfig(config) {
+    try {
+        return JSON.parse(Base64.decode(config.substring(8)));
+    } catch (error) {
+        return null;
+    }
+}
+
+function encodeVmessConfig(config) {
+    return `vmess://${Base64.encode(JSON.stringify(config))}`;
+}
+
+function getConfigParam(config, key) {
+    const paramKey = key.toLowerCase();
+
+    for (const [name, value] of config.searchParams) {
+        if (name.toLowerCase() === paramKey) return value;
+    }
+
+    return '';
+}
+
+function setConfigParam(config, key, value) {
+    const paramKey = key.toLowerCase();
+
+    for (const name of [...config.searchParams.keys()]) {
+        if (name.toLowerCase() === paramKey) config.searchParams.delete(name);
+    }
+
+    config.searchParams.set(key, value);
+}
+
+function setConfigParams(config, params) {
+    const configType = detectConfigType(config);
+    if (!configType) return '';
+
+    if (configType === 'vmess') {
+        const vmessConfig = decodeVmessConfig(config);
+        if (!vmessConfig) return '';
+
+        Object.assign(vmessConfig, params);
+        return encodeVmessConfig(vmessConfig);
+    }
+
+    try {
+        const parsedConfig = new URL(config);
+
+        for (const [key, value] of Object.entries(params)) {
+            setConfigParam(parsedConfig, key, value);
+        }
+
+        return parsedConfig.toString().replace(/\+/g, '%20');
+    } catch (error) {
+        return '';
+    }
+}
+
+function isTLSConfig(config) {
+    const configType = detectConfigType(config);
+
+    if (configType === 'vmess') {
+        const vmessConfig = decodeVmessConfig(config);
+        if (!vmessConfig) return false;
+
+        return String(vmessConfig.tls || '').toLowerCase() === 'tls';
+    }
+
+    if (!['vless', 'trojan'].includes(configType)) return false;
+
+    try {
+        return getConfigParam(new URL(config), 'security').toLowerCase() === 'tls';
+    } catch (error) {
+        return false;
+    }
+}
+
+function normalizeConfigWhitespace(config) {
+    return config.replace(/[^\S\r\n]/g, character => encodeURIComponent(character));
+}
+
+function getDirectConfigs(rawInput) {
+    return rawInput.split(/\r?\n/).map(config => normalizeConfigWhitespace(config.trim())).filter(isValidConfigFormat);
+}
+
+function getBase64Configs(rawInput) {
+    try {
+        let base64Input = rawInput.replace(/\s/g, '').replace(/-/g, '+').replace(/_/g, '/');
+        base64Input = base64Input.padEnd(Math.ceil(base64Input.length / 4) * 4, '=');
+
+        return getDirectConfigs(Base64.decode(base64Input));
+    } catch (error) {
+        return [];
+    }
+}
+
+function getBaseConfigs(rawInput) {
+    const configs = getDirectConfigs(rawInput);
+    return configs.length > 0 ? configs : getBase64Configs(rawInput);
+}
+
+function extractAddressFromConfig(config) {
+    const configType = detectConfigType(config);
+
+    if (configType === 'vmess') {
+        const vmessConfig = decodeVmessConfig(config);
+        return vmessConfig ? vmessConfig.add : null;
+    } else if (configType === 'vless') {
+        const regex = /vless:\/\/([^@]+)@([^:]+):(\d+)(\?[^#]*)?(#.*)?/;
+        const match = config.match(regex);
+        const address = match[2];
+        return address;
+    } else if (configType === 'wireguard') {
+        const regex = /wireguard:\/\/[^@]+@([^:]+):.+/;
+        const match = config.match(regex);
+        return match[1];
+    } else if (configType === 'trojan') {
+        const regex = /trojan:\/\/[^@]+@([^:]+):.+/;
+        const match = config.match(regex);
+        return match[1];
+    }
+
+    return null;
+}
+
+function replaceIPAndPortInConfig(inputConfig, ipOrAddress, newPort = null) {
+    const configType = detectConfigType(inputConfig);
+    let addressStr = typeof ipOrAddress === 'string' ? ipOrAddress : ipOrAddress.toString();
+    let result = '';
+
+    if (configType === 'vmess') {
+        const vmessConfig = decodeVmessConfig(inputConfig);
+        if (!vmessConfig) return '';
+
+        vmessConfig.add = addressStr;
+        if (newPort) vmessConfig.port = parseInt(newPort);
+        result = `${encodeVmessConfig(vmessConfig)}\n\n`;
+    } else if (configType === 'vless') {
+        addressStr = addressStr.includes(':') && !addressStr.startsWith('[') ? `[${addressStr}]` : addressStr;
+        const match = inputConfig.match(/^(vless:\/\/[^@]+)@([^:]+):(\d+)(.*)$/);
+        const [_, start, domain, port, end] = match;
+        result = `${start}@${addressStr}:${newPort || port}${end}\n\n`;
+    } else if (configType === 'wireguard') {
+        const regex = /^(wireguard:\/\/[^@]+@)[^:]+:(\d+)(.*)$/;
+        result = inputConfig.replace(regex, (m, p1, p2, p3) => `${p1}${addressStr}:${newPort || p2}${p3}\n\n`);
+    } else if (configType === 'trojan') {
+        const regex = /^(trojan:\/\/[^@]+@)[^:]+:(\d+)(.*)$/;
+        result = inputConfig.replace(regex, (m, p1, p2, p3) => `${p1}${addressStr}:${newPort || p2}${p3}\n\n`);
+    }
+
+    return result;
+}
+
+function convertWireGuardConfig(rawConfig) {
+    let section = '';
+    let peerName = '';
+    const interfaceConfig = {};
+    const peerConfig = {};
+    const awgKeys = [
+        'jc', 'jmin', 'jmax', 's1', 's2', 's3', 's4', 'h1', 'h2', 'h3', 'h4',
+        'i1', 'i2', 'i3', 'i4', 'i5', 'headerprotectionkey', 'contentpaddingaddition',
+        'rekeyaftertime', 'rekeytimeout', 'rejectaftertime', 'keepalivetimeout',
+        'maxhandshakeattempts', 'randomtrailers', 'disablecookies'
+    ];
+
+    for (const rawLine of rawConfig.split(/\r?\n/)) {
+        const line = rawLine.trim();
+        if (!line) continue;
+
+        if (line.toLowerCase() === '[interface]') {
+            section = 'interface';
+            continue;
+        }
+        if (line.toLowerCase() === '[peer]') {
+            section = 'peer';
+            continue;
+        }
+        if (line.startsWith('#')) {
+            if (section === 'peer' && !peerName && Object.keys(peerConfig).length === 0) peerName = line.substring(1).trim();
+            continue;
+        }
+
+        const separator = line.indexOf('=');
+        if (!section || separator === -1) continue;
+
+        const key = line.substring(0, separator).trim().toLowerCase();
+        const value = line.substring(separator + 1).trim();
+
+        if (section === 'interface') {
+            interfaceConfig[key] = value;
+        } else {
+            peerConfig[key] = value;
+        }
+    }
+
+    if (!interfaceConfig.privatekey || !interfaceConfig.address || !peerConfig.publickey || !peerConfig.endpoint) {
+        return null;
+    }
+
+    const endpoint = peerConfig.endpoint.match(/^(?:\[([^\]]+)\]|([^:]+)):(\d+)$/);
+    if (!endpoint) return null;
+
+    const host = endpoint[1] || endpoint[2];
+    const port = endpoint[3];
+    const params = new URLSearchParams();
+    params.set('publickey', peerConfig.publickey);
+    params.set('address', interfaceConfig.address.replace(/\s*,\s*/g, ','));
+
+    if (peerConfig.allowedips) params.set('allowedips', peerConfig.allowedips.replace(/\s*,\s*/g, ','));
+    if (interfaceConfig.mtu) params.set('mtu', interfaceConfig.mtu);
+    if (peerConfig.presharedkey) params.set('presharedkey', peerConfig.presharedkey);
+    if (peerConfig.persistentkeepalive) params.set('keepalive', peerConfig.persistentkeepalive);
+
+    const reserved = peerConfig.reserved || peerConfig.clientid || peerConfig.client_id;
+    if (reserved) params.set('reserved', reserved);
+
+    for (const key of awgKeys) {
+        if (interfaceConfig[key]) params.set(key, interfaceConfig[key]);
+    }
+
+    const endpointHost = host.includes(':') ? `[${host}]` : host;
+    const name = peerName || host;
+    const query = params.toString().replace(/\+/g, '%20');
+
+    return `wireguard://${encodeURIComponent(interfaceConfig.privatekey)}@${endpointHost}:${port}?${query}#${encodeURIComponent(name)}`;
+}
+
+function getWireGuardConfigs(rawInput) {
+    const directConfigs = getDirectConfigs(rawInput).filter(config => detectConfigType(config) === 'wireguard');
+    const base64Configs = getBase64Configs(rawInput).filter(config => detectConfigType(config) === 'wireguard');
+    const rawConfigs = rawInput
+        .split(/(?=^\s*\[Interface\]\s*$)/gim)
+        .map(config => config.trim())
+        .filter(config => /^\[Interface\]/im.test(config) && /^\[Peer\]/im.test(config))
+        .map(convertWireGuardConfig)
+        .filter(Boolean);
+
+    return [...new Set([...directConfigs, ...base64Configs, ...rawConfigs])];
+}
+
+function generateWireGuardConfigs(rawInput) {
+    const configs = getWireGuardConfigs(rawInput);
+
+    generatedOutput = configs.length ? `${configs.join('\n\n')}\n\n` : '';
+    displayResult(configs.length);
+}
+
+function generateConfigs() {
+    const inputType = document.getElementById('inputType').value;
+    const rawInput = document.getElementById('inputConfig').value.trim();
+
+    if (!rawInput) {
+        showFieldMessage('configMessage', 'Please enter the config.');
+        return;
+    }
+
+    if (inputType === 'wireguard') {
+        generateWireGuardConfigs(rawInput);
+        return;
+    }
+
+    const baseConfigs = getBaseConfigs(rawInput);
+
+    if (baseConfigs.length === 0) {
+        showFieldMessage('configMessage', 'No valid base configs found.');
+        return;
+    }
+
+    if (inputType === 'cidr') {
+        modifyConfigsFromCIDR(baseConfigs);
+    } else if (inputType === 'list') {
+        modifyConfigsFromList(baseConfigs);
+    } else if (inputType === 'configList') {
+        modifyConfigsFromConfigsList(baseConfigs);
+    } else if (inputType === 'sniSpoof') {
+        modifyConfigsFromSNISpoof(baseConfigs);
+    } else if (inputType === 'fragfp') {
+        modifyConfigsForFragFP(baseConfigs);
+    } else if (inputType === 'ech') {
+        modifyConfigsForECH(baseConfigs);
+    }
+}
+
+function modifyConfigsFromList(baseConfigs) {
+    const rawText = document.getElementById('ipList').value.trim();
+
+    if (rawText.length === 0) {
+        showFieldMessage('ipListMessage', 'Please enter the IP list.');
+        return;
+    }
+
+    const validIpList = extractValidIPs(rawText);
+
+    if (validIpList.length === 0) {
+        showFieldMessage('ipListMessage', 'No valid IPs found in the input.');
+        return;
+    }
+
+    generatedOutput = '';
+    let count = 0;
+
+    for (const config of baseConfigs) {
+        for (const ip of validIpList) {
+            generatedOutput += replaceIPAndPortInConfig(config.trim(), ipaddr.parse(ip));
+            count++;
+        }
+    }
+
+    displayResult(count);
+}
+
+function modifyConfigsFromCIDR(baseConfigs) {
+    const ipRanges = document.getElementById('ipRange').value.trim().split('\n').filter(range => range.trim() !== '');
+    const outputCount = Math.floor(Number(document.getElementById('outputCount').value));
+
+    if (!Number.isFinite(outputCount) || outputCount < 1) {
+        showFieldMessage('outputCountMessage', 'Please enter a valid number of outputs.');
+        return;
+    }
+
+    if (ipRanges.length === 0) {
+        showFieldMessage('ipRangeMessage', 'Please enter at least one IP range.');
+        return;
+    }
+
+    for (const ipRange of ipRanges) {
+        if (!isValidCIDR(ipRange.trim())) {
+            showFieldMessage('ipRangeMessage', `Please enter a valid IP range: ${ipRange}`);
+            return;
+        }
+    }
+
+    generatedOutput = '';
+    let count = 0;
+
+    for (const config of baseConfigs) {
+        if (count >= outputCount) break;
+
+        for (const ipRange of ipRanges) {
+            const [ip, range] = ipaddr.parseCIDR(ipRange.trim());
+            let currentIp = ip;
+
+            while (currentIp.match(ipaddr.parseCIDR(ipRange.trim())) && count < outputCount) {
+                generatedOutput += replaceIPAndPortInConfig(config.trim(), currentIp);
+                count++;
+                currentIp = incrementIP(currentIp);
+            }
+
+            if (count >= outputCount) break;
+        }
+    }
+
+    displayResult(count);
+}
+
+function modifyConfigsFromConfigsList(baseConfigs) {
+    const configList = document.getElementById('configList').value.trim().split('\n').filter(config => config.trim() !== '');
+
+    if (configList.length === 0) {
+        showFieldMessage('configListMessage', 'Please enter the configs list.');
+        return;
+    }
+
+    generatedOutput = '';
+    let count = 0;
+
+    for (const baseConfig of baseConfigs) {
+        for (const targetConfig of configList) {
+            const address = extractAddressFromConfig(targetConfig.trim());
+            if (address) {
+                generatedOutput += replaceIPAndPortInConfig(baseConfig.trim(), address);
+                count++;
+            }
+        }
+    }
+
+    displayResult(count);
+}
+
+function modifyConfigsFromSNISpoof(baseConfigs) {
+    const spoofIp = document.getElementById('spoofIp').value.trim();
+    const spoofPort = document.getElementById('spoofPort').value.trim();
+
+    if (!spoofIp || !spoofPort) {
+        showFieldMessage('sniSpoofMessage', 'Please enter both Spoof IP and Port.');
+        return;
+    }
+
+    generatedOutput = '';
+    let count = 0;
+
+    for (const config of baseConfigs) {
+        generatedOutput += replaceIPAndPortInConfig(config.trim(), spoofIp, spoofPort);
+        count++;
+    }
+
+    displayResult(count);
+}
+
+function modifyConfigsForFragFP(baseConfigs) {
+    const rawText = document.getElementById('fragfpIpList').value.trim();
+
+    if (!rawText) {
+        showFieldMessage('fragfpMessage', 'Please enter the IP list.');
+        return;
+    }
+
+    const validIpList = extractValidIPs(rawText);
+
+    if (validIpList.length === 0) {
+        showFieldMessage('fragfpMessage', 'No valid IPs found in the input.');
+        return;
+    }
+
+    const configs = [];
+
+    for (const config of baseConfigs) {
+        for (const ip of validIpList) {
+            const transformedConfig = transformFragFPConfig(config.trim(), ip);
+            if (transformedConfig) configs.push(transformedConfig);
+        }
+    }
+
+    const uniqueConfigs = [...new Set(configs)];
+    generatedOutput = uniqueConfigs.length ? `${uniqueConfigs.join('\n\n')}\n\n` : '';
+    displayResult(uniqueConfigs.length);
+}
+
+function transformFragFPConfig(config, ip) {
+    if (!['vless', 'trojan'].includes(detectConfigType(config))) return '';
+
+    let parsedConfig;
+    try {
+        parsedConfig = new URL(config);
+    } catch (error) {
+        return '';
+    }
+
+    const security = getConfigParam(parsedConfig, 'security').toLowerCase();
+    const host = getConfigParam(parsedConfig, 'host');
+    const tls = security === 'tls';
+
+    if (!['', 'tls', 'none'].includes(security)) return '';
+    if (!['ws', 'xhttp', 'websocket', 'httpupgrade', 'grpc'].includes(getConfigParam(parsedConfig, 'type').toLowerCase()) || !host.trim()) return '';
+    if (tls && !['443', '2053', '2083', '2087', '2096', '8443'].includes(parsedConfig.port)) return '';
+    if (!tls && !['80', '8080', '8880', '2052', '2082', '2086', '2095'].includes(parsedConfig.port)) return '';
+
+    parsedConfig.hostname = ip.includes(':') ? `[${ip}]` : ip;
+    parsedConfig.port = '443';
+
+    for (const key of [...parsedConfig.searchParams.keys()]) {
+        if (['allowinsecure', 'allow_insecure', 'insecure', 'fm', 'dialmode', 'ech', 'echoutbound', 'fp', 'cs'].includes(key.toLowerCase())) {
+            parsedConfig.searchParams.delete(key);
+        }
+    }
+
+    setConfigParam(parsedConfig, 'security', 'tls');
+    setConfigParam(parsedConfig, 'fp', 'unsafe');
+    setConfigParam(parsedConfig, 'fm', decodeURIComponent('%7B%22tcp%22%3A%20%5B%7B%22type%22%3A%20%22fragment%22%2C%20%22settings%22%3A%20%7B%22packets%22%3A%20%22tlshello%22%2C%20%22lengths%22%3A%20%5B%220%22%2C%20%22104%22%2C%20%221%22%5D%2C%20%22delays%22%3A%20%5B%220%22%5D%2C%20%22maxSplit%22%3A%20%220%22%7D%7D%2C%7B%22type%22%3A%20%22fragment%22%2C%20%22settings%22%3A%20%7B%22packets%22%3A%20%221-1%22%2C%20%22lengths%22%3A%20%5B%22114%22%2C%20%221%22%5D%2C%20%22delays%22%3A%20%5B%221%22%5D%2C%20%22maxSplit%22%3A%20%2211%22%7D%7D%5D%7D'));
+    setConfigParam(parsedConfig, 'cs', decodeURIComponent('TLS_AES_256_GCM_SHA384%3ATLS_CHACHA20_POLY1305_SHA256%3ATLS_AES_128_GCM_SHA256%3ATLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384%3ATLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384%3ATLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256%3ATLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256%3ATLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305_SHA256%3ATLS_ECDHE_RSA_WITH_CHACHA20_POLY1305_SHA256%3ATLS_ECDHE_ECDSA_WITH_AES_256_CBC_SHA%3ATLS_ECDHE_RSA_WITH_AES_256_CBC_SHA%3ATLS_ECDHE_ECDSA_WITH_AES_128_CBC_SHA256%3ATLS_ECDHE_RSA_WITH_AES_128_CBC_SHA256'));
+    setConfigParam(parsedConfig, 'sni', host);
+
+    if (['ws', 'websocket', 'httpupgrade'].includes(getConfigParam(parsedConfig, 'type').toLowerCase())) {
+        setConfigParam(parsedConfig, 'alpn', 'http/1.1');
+    }
+
+    return parsedConfig.toString().replace(/\+/g, '%20');
+}
+
+function modifyConfigsForECH(baseConfigs) {
+    const echList = [...new Set(document.getElementById('echList').value
+        .split(/\r?\n/)
+        .map(ech => ech.trim())
+        .filter(Boolean))];
+
+    if (echList.length === 0) {
+        showFieldMessage('echMessage', 'Please enter at least one ECH config.');
+        return;
+    }
+
+    const configs = [];
+
+    for (const config of baseConfigs) {
+        if (!isTLSConfig(config)) continue;
+
+        for (const ech of echList) {
+            const transformedConfig = setConfigParams(config.trim(), { ech });
+            if (transformedConfig) configs.push(transformedConfig);
+        }
+    }
+
+    const uniqueConfigs = [...new Set(configs)];
+    generatedOutput = uniqueConfigs.length ? `${uniqueConfigs.join('\n\n')}\n\n` : '';
+    displayResult(uniqueConfigs.length);
+}
+
+function displayResult(count) {
+    const formActions = document.getElementById('formActions');
+    const copyButton = document.getElementById('copyButton');
+    const downloadButton = document.getElementById('downloadButton');
+    const qrButton = document.getElementById('qrButton');
+
+    if (generatedOutput) {
+        showSuccess(`Successfully generated ${count} configs.`);
+        formActions.classList.add('has-output');
+        copyButton.style.display = 'inline-block';
+        downloadButton.style.display = 'inline-block';
+        qrButton.style.display = count === 1 ? 'inline-block' : 'none';
+
+        if (count === 1) {
+            qrButton.removeAttribute('title');
+        } else {
+            qrButton.setAttribute('title', 'QR is available for a single config only');
+        }
+    } else {
+        showError('No configs were generated.');
+        formActions.classList.remove('has-output');
+        copyButton.style.display = 'none';
+        downloadButton.style.display = 'none';
+        qrButton.style.display = 'none';
+    }
+}
+
+async function loadIPRanges(service, button) {
+    clearMessage();
+
+    const providerButtons = document.querySelectorAll('.provider-button');
+    const label = button.querySelector('.provider-label');
+    const originalText = button.dataset.defaultLabel || label.textContent;
+    button.dataset.defaultLabel = originalText;
+    clearTimeout(button.feedbackTimer);
+    providerButtons.forEach(providerButton => providerButton.disabled = true);
+    label.textContent = 'Loading...';
+
+    const url = `https://raw.githubusercontent.com/seramo/cdn-ip-ranges/main/${service}.json`;
+
+    try {
+        const response = await fetch(url);
+        if (!response.ok) {
+            throw new Error(`Error retrieving data: ${response.statusText}`);
+        }
+
+        const data = await response.json();
+        const ipRanges = data.ipv4 || [];
+
+        if (ipRanges.length === 0) {
+            showFieldMessage('ipRangeMessage', 'No IP range found.');
+            return;
+        }
+
+        if (service !== 'gcore') {
+            const shuffledIPRanges = shuffleArray(ipRanges).slice(0, 4);
+            document.getElementById('ipRange').value = shuffledIPRanges.join('\n');
+        } else {
+            document.getElementById('ipRange').value = ipRanges.join('\n');
+        }
+
+    } catch (error) {
+        console.error(error);
+        showFieldMessage('ipRangeMessage', 'An error occurred while loading IPs.');
+    } finally {
+        label.textContent = originalText;
+        providerButtons.forEach(providerButton => providerButton.disabled = false);
+    }
+}
+
+function copyToClipboard() {
+    if (generatedOutput) {
+        navigator.clipboard.writeText(generatedOutput.replace(/\n\n/g, '\n').trimEnd()).then(() => {
+            showButtonFeedback(document.getElementById('copyButton'), 'Copied');
+        }).catch(err => {
+            console.error(err);
+            showError('Copy error: ' + err);
+        });
+    }
+}
+
+function downloadOutput() {
+    if (generatedOutput) {
+        const blob = new Blob([generatedOutput.replace(/\n\n/g, '\n').trimEnd()], { type: 'text/plain' });
+        const now = new Date();
+        const date = now.toISOString().split('T')[0];
+        const time = now.toTimeString().split(' ')[0].replace(/:/g, '-');
+        const fileName = `modified_configs_${date}_${time}.txt`;
+
+        const link = document.createElement('a');
+        link.href = URL.createObjectURL(blob);
+        link.download = fileName;
+        link.click();
+        URL.revokeObjectURL(link.href);
+    }
+}
+
+let currentQrText = '';
+
+function getSingleConfigText() {
+    if (!generatedOutput) {
+        return '';
+    }
+
+    return generatedOutput.replace(/\n\n/g, '\n').trim();
+}
+
+function showQrCode() {
+    const configText = getSingleConfigText();
+
+    if (!configText || configText.includes('\n')) {
+        showWarning('QR code is available when exactly one config is generated.');
+        return;
+    }
+
+    if (configText.length > 2800) {
+        showWarning('This config is too long to fit in a QR code.');
+        return;
+    }
+
+    if (typeof QRCode === 'undefined') {
+        showError('QR library failed to load. Check your connection and reload.');
+        return;
+    }
+
+    currentQrText = configText;
+
+    const qrBox = document.getElementById('qrCodeBox');
+    const qrHint = document.getElementById('qrModalHint');
+    qrBox.innerHTML = '';
+    qrHint.textContent = configText.length > 120 ? `${configText.slice(0, 120)}…` : configText;
+
+    try {
+        new QRCode(qrBox, {
+            text: configText,
+            width: 192,
+            height: 192,
+            colorDark: '#111111',
+            colorLight: '#ffffff',
+            correctLevel: QRCode.CorrectLevel.M
+        });
+    } catch (error) {
+        console.error(error);
+        showError('Could not generate the QR code for this config.');
+        return;
+    }
+
+    document.getElementById('qrModal').style.display = 'flex';
+    document.body.style.overflow = 'hidden';
+    document.getElementById('qrDownloadButton').focus();
+}
+
+function closeQrModal() {
+    document.getElementById('qrModal').style.display = 'none';
+    document.body.style.overflow = '';
+}
+
+function downloadQrCode() {
+    const qrBox = document.getElementById('qrCodeBox');
+    const canvas = qrBox.querySelector('canvas');
+    const image = qrBox.querySelector('img');
+    let downloadUrl = '';
+
+    if (canvas) {
+        downloadUrl = canvas.toDataURL('image/png');
+    } else if (image && image.src) {
+        downloadUrl = image.src;
+    }
+
+    if (!downloadUrl) {
+        showError('QR image is not ready yet.');
+        return;
+    }
+
+    const link = document.createElement('a');
+    link.href = downloadUrl;
+    link.download = `config_qr_${new Date().toISOString().split('T')[0]}.png`;
+    link.click();
+}
+
+function copyQrText() {
+    if (!currentQrText) {
+        return;
+    }
+
+    navigator.clipboard.writeText(currentQrText).then(() => {
+        showButtonFeedback(document.getElementById('qrCopyButton'), 'Copied');
+    }).catch(err => {
+        console.error(err);
+        showError('Copy error: ' + err);
+    });
+}
+
+function setTheme(theme) {
+    document.documentElement.setAttribute('data-bs-theme', theme);
+    localStorage.setItem('theme', theme);
+
+    const themeToggle = document.getElementById('themeToggle');
+    if (themeToggle) {
+        const nextTheme = theme === 'dark' ? 'light' : 'dark';
+        document.getElementById('themeSunIcon').classList.toggle('d-none', nextTheme !== 'light');
+        document.getElementById('themeMoonIcon').classList.toggle('d-none', nextTheme !== 'dark');
+        themeToggle.setAttribute('aria-label', `Switch to ${nextTheme} mode`);
+        themeToggle.title = `Switch to ${nextTheme} mode`;
+    }
+
+    document.querySelector('meta[name="theme-color"]').content = theme === 'dark' ? '#141c23' : '#f5f8fa';
+}
+
+function toggleTheme() {
+    const theme = document.documentElement.getAttribute('data-bs-theme') === 'dark' ? 'light' : 'dark';
+    setTheme(theme);
+}
+
+document.querySelectorAll('textarea, input:not([type="hidden"]):not([type="radio"])').forEach(input => {
+    input.addEventListener('input', clearMessage);
+});
+
+document.addEventListener('keydown', event => {
+    if (event.key === 'Escape') {
+        const qrModal = document.getElementById('qrModal');
+        if (qrModal && qrModal.style.display !== 'none') {
+            closeQrModal();
+        }
+    }
+});
+
+setTheme(localStorage.getItem('theme') || 'dark');
+
+function updateBaseConfigCount() {
+    const inputConfig = document.getElementById('inputConfig');
+    const baseConfigCount = document.getElementById('baseConfigCount');
+
+    if (! inputConfig || ! baseConfigCount) {
+        return;
+    }
+
+    const inputType = document.getElementById('inputType')?.value;
+    const count = inputType === 'wireguard'
+        ? getWireGuardConfigs(inputConfig.value).length
+        : inputConfig.value.split(/\n+/).map(line => line.trim()).filter(Boolean).length;
+    baseConfigCount.textContent = `${count} config${count === 1 ? '' : 's'}`;
+}
+
+const inputConfig = document.getElementById('inputConfig');
+if (inputConfig) {
+    inputConfig.addEventListener('paste', event => {
+        const pastedText = event.clipboardData?.getData('text') || '';
+
+        if (! pastedText) {
+            return;
+        }
+
+        const directConfigs = getDirectConfigs(pastedText);
+        let replacement;
+
+        if (directConfigs.length > 0) {
+            replacement = pastedText.split(/\r?\n/).map(line => {
+                const config = line.trim();
+                return isValidConfigFormat(config) ? normalizeConfigWhitespace(config) : line;
+            }).join('\n');
+
+            if (replacement === pastedText) {
+                return;
+            }
+        } else {
+            const configs = getBase64Configs(pastedText);
+            if (configs.length === 0) {
+                return;
+            }
+
+            replacement = configs.join('\n');
+        }
+
+        event.preventDefault();
+
+        const start = inputConfig.selectionStart;
+        const end = inputConfig.selectionEnd;
+        const before = inputConfig.value.slice(0, start);
+        const after = inputConfig.value.slice(end);
+
+        if (before && ! before.endsWith('\n')) {
+            replacement = `\n${replacement}`;
+        }
+        if (after && ! after.startsWith('\n')) {
+            replacement += '\n';
+        }
+
+        inputConfig.setRangeText(replacement, start, end, 'end');
+        inputConfig.dispatchEvent(new Event('input', { bubbles: true }));
+    });
+
+    inputConfig.addEventListener('input', updateBaseConfigCount);
+    updateBaseConfigCount();
+}
